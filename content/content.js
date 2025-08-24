@@ -1,8 +1,11 @@
 let slothSidebar = null;
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.action === "toggleSidebar") { // Fixed: removed extra parenthesis
-    toggleSidebar();
+// content.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "toggleSidebar") {
+    console.log("Received toggleSidebar from popup");
+    toggleSidebar(); // your injected sidebar function
+    sendResponse({ status: "Sidebar toggled" });
   }
 });
 
@@ -28,3 +31,10 @@ function toggleSidebar() {
     document.body.appendChild(slothSidebar);
     console.log("Sidebar added");
 }
+
+// Example: Send a message to background when the page loads
+chrome.runtime.sendMessage({ type: "GREET" }, (response) => {
+  console.log("Background replied:", response.reply);
+});
+
+// You can add more logic here, e.g., OCR, sidebar, etc.

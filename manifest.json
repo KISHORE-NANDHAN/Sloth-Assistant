@@ -1,25 +1,31 @@
 {
   "manifest_version": 3,
-  "name": "Sloth Assistant",
-  "description": "Floating sidebar AI assistant",
+  "name": "Sloth AI Assistant",
+  "description": "AI-powered Chrome extension with OCR and sidebar assistant.",
   "version": "1.0",
-  "permissions": ["scripting", "activeTab"],
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
-      "16": "assets/sloth.png",
-      "48": "assets/sloth.png",
-      "128": "assets/sloth.png"
+      "16": "./assets/sloth.png",
+      "48": "./assets/sloth.png",
+      "128": "./assets/sloth.png"
     }
-  },
-  "background": {
-    "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
-      "css": ["content/styles.css"]
+      "js": ["./content/content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/sloth.png"],
+      "matches": ["<all_urls>"]
     }
   ]
 }
