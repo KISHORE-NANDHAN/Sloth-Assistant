@@ -1,0 +1,18 @@
+#sloth-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100vh;
+  background: white;
+  border-left: 2px solid #ccc;
+  box-shadow: -2px 0 5px rgba(0,0,0,0.2);
+  z-index: 999999;
+}
+#sloth-sidebar h2 {
+  margin: 0;
+  padding: 15px;
+  background: #4caf50;
+  color: white;
+  text-align: center;
+}

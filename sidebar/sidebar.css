@@ -1,0 +1,22 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#header {
+  background: #4caf50;
+  color: white;
+  padding: 10px;
+  font-weight: bold;
+}
+
+#content {
+  flex: 1;
+  padding: 10px;
+}
+#content p {
+  margin: 0;
+}

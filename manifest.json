@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Sloth Assistant",
+  "description": "Floating sidebar AI assistant",
+  "version": "1.0",
+  "permissions": ["scripting", "activeTab"],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/sloth.png",
+      "48": "assets/sloth.png",
+      "128": "assets/sloth.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/styles.css"]
+    }
+  ]
+}
