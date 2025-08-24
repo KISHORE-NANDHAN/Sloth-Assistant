@@ -331,3 +331,4 @@ function fillGeminiInput(text) {
   }
   
   console.log("[Injected Script] OCR text filled successfully.");
+}
