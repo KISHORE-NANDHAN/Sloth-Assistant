@@ -1,71 +1,186 @@
-// background.js with Debugging
+// background.js with Enhanced Debugging and Security Fixes
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[background.js] Extension installed.");
-  chrome.sidePanel.setOptions({ path: "sidepanel/sidepanel.html", enabled: true });
+  try {
+    chrome.sidePanel.setOptions({ 
+      path: "sidepanel/sidepanel.html", 
+      enabled: true 
+    });
+    console.log("[background.js] Side panel options set successfully.");
+  } catch (error) {
+    console.error("[background.js] Failed to set side panel options:", error);
+  }
 });
 
 chrome.commands.onCommand.addListener(async (cmd) => {
   console.log(`[background.js] Command received: ${cmd}`);
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  if (cmd === "toggle-sidepanel") {
-    if (tab?.id) {
-      console.log(`[background.js] Toggling side panel for tabId: ${tab.id}`);
-      await chrome.sidePanel.open({ tabId: tab.id });
-    } else {
-      console.warn("[background.js] No active tab found to toggle side panel.");
-    }
-    return;
-  }
-
-  if (cmd === "start-ocr") {
-    if (!tab?.id) {
-      console.warn("[background.js] No active tab found to start OCR.");
+    if (cmd === "toggle-sidepanel") {
+      if (tab?.id) {
+        console.log(`[background.js] Toggling side panel for tabId: ${tab.id}`);
+        await chrome.sidePanel.open({ tabId: tab.id });
+        console.log("[background.js] Side panel opened successfully.");
+      } else {
+        console.warn("[background.js] No active tab found to toggle side panel.");
+      }
       return;
     }
 
-    console.log(`[background.js] Attempting to inject OCR scripts into tabId: ${tab.id}`);
-    try {
-      await chrome.scripting.insertCSS({
-        target: { tabId: tab.id },
-        files: ['content/overlay.css'],
-      });
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content/overlay.js'],
-      });
-      console.log("[background.js] OCR scripts injected successfully.");
+    if (cmd === "start-ocr") {
+      if (!tab?.id) {
+        console.warn("[background.js] No active tab found to start OCR.");
+        return;
+      }
+
+      // Security: Check if we can inject scripts into this tab
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('moz-extension://')) {
+        console.warn("[background.js] Cannot inject scripts into protected pages:", tab.url);
+        // Notify user through side panel
+        chrome.storage.local.set({ 
+          lastError: "Cannot capture from protected pages (chrome://, extension pages, etc.)" 
+        });
+        await chrome.sidePanel.open({ tabId: tab.id });
+        return;
+      }
+
+      console.log(`[background.js] Attempting to inject OCR scripts into tabId: ${tab.id}, URL: ${tab.url}`);
       
-      // Now, we can safely send the message.
-      await chrome.tabs.sendMessage(tab.id, { type: "START_REGION_SELECT" });
-      console.log("[background.js] Sent 'START_REGION_SELECT' message to content script.");
-    } catch (e) {
-      console.error("[background.js] Failed to inject scripts or send message:", e);
-      // This error might occur on pages where content scripts are not allowed (e.g., chrome:// pages)
+      try {
+        // Check if content script is already injected
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => window.hasOwnProperty('ocrOverlayInjected')
+        });
+
+        if (!results[0]?.result) {
+          console.log("[background.js] Injecting CSS and JS for OCR overlay.");
+          await chrome.scripting.insertCSS({
+            target: { tabId: tab.id },
+            files: ['content/overlay.css'],
+          });
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content/overlay.js'],
+          });
+          console.log("[background.js] OCR scripts injected successfully.");
+        } else {
+          console.log("[background.js] OCR scripts already injected.");
+        }
+        
+        // Send message with error handling
+        try {
+          await chrome.tabs.sendMessage(tab.id, { type: "START_REGION_SELECT" });
+          console.log("[background.js] Sent 'START_REGION_SELECT' message to content script.");
+        } catch (messageError) {
+          console.error("[background.js] Failed to send message to content script:", messageError);
+          // Retry after a short delay
+          setTimeout(async () => {
+            try {
+              await chrome.tabs.sendMessage(tab.id, { type: "START_REGION_SELECT" });
+              console.log("[background.js] Retry: Sent 'START_REGION_SELECT' message successfully.");
+            } catch (retryError) {
+              console.error("[background.js] Retry failed:", retryError);
+            }
+          }, 100);
+        }
+      } catch (injectionError) {
+        console.error("[background.js] Failed to inject scripts:", injectionError);
+        // Store error for side panel to display
+        chrome.storage.local.set({ 
+          lastError: `Failed to inject scripts: ${injectionError.message}` 
+        });
+        await chrome.sidePanel.open({ tabId: tab.id });
+      }
     }
+  } catch (error) {
+    console.error("[background.js] Error in command handler:", error);
   }
 });
 
-// Relay messages between different parts of the extension
+// Enhanced message relay with input validation and security checks
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log("[background.js] Message received:", msg);
+  console.log("[background.js] Message received:", msg, "from sender:", sender);
 
-  if (msg?.type === "OCR_TEXT_READY") {
-    console.log("[background.js] Received OCR text. Storing and opening side panel.");
-    chrome.storage.local.set({ lastOcrText: msg.text || "" }).then(async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) await chrome.sidePanel.open({ tabId: tab.id });
-      sendResponse({ ok: true, message: "Text stored and side panel opened." });
-    });
-    return true; // Indicates async response
+  // Security: Validate message structure and sender
+  if (!msg || typeof msg !== 'object') {
+    console.warn("[background.js] Invalid message format received.");
+    sendResponse({ ok: false, error: "Invalid message format" });
+    return;
   }
-  
-  if (msg?.type === "REGION_CAPTURE_READY") {
-    console.log("[background.js] Received REGION_CAPTURE_READY. Forwarding to side panel.");
-    // Forward the message to the side panel
-    chrome.runtime.sendMessage(msg); 
-    sendResponse({ ok: true, message: "Capture data forwarded." });
-    return true; // Indicates async response
+
+  // Security: Ensure message comes from our extension
+  if (sender.id !== chrome.runtime.id) {
+    console.warn("[background.js] Message from unauthorized sender:", sender.id);
+    sendResponse({ ok: false, error: "Unauthorized sender" });
+    return;
   }
+
+  try {
+    if (msg.type === "OCR_TEXT_READY") {
+      console.log("[background.js] Received OCR text. Storing and opening side panel.");
+      
+      // Security: Validate and sanitize text input
+      const text = typeof msg.text === 'string' ? msg.text.slice(0, 50000) : ""; // Limit text size
+      
+      chrome.storage.local.set({ lastOcrText: text }).then(async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          await chrome.sidePanel.open({ tabId: tab.id });
+          console.log("[background.js] Side panel opened after OCR text ready.");
+        }
+        sendResponse({ ok: true, message: "Text stored and side panel opened." });
+      }).catch(error => {
+        console.error("[background.js] Failed to store OCR text:", error);
+        sendResponse({ ok: false, error: error.message });
+      });
+      return true; // Indicates async response
+    }
+    
+    if (msg.type === "REGION_CAPTURE_READY") {
+      console.log("[background.js] Received REGION_CAPTURE_READY. Forwarding to side panel.");
+      
+      // Security: Validate dataUrl format
+      if (msg.dataUrl && typeof msg.dataUrl === 'string' && msg.dataUrl.startsWith('data:image/')) {
+        // Forward the message to the side panel
+        chrome.runtime.sendMessage(msg).catch(error => {
+          console.error("[background.js] Failed to forward message to side panel:", error);
+        });
+        sendResponse({ ok: true, message: "Capture data forwarded." });
+      } else {
+        console.warn("[background.js] Invalid dataUrl in REGION_CAPTURE_READY message.");
+        sendResponse({ ok: false, error: "Invalid capture data" });
+      }
+      return true; // Indicates async response
+    }
+
+    if (msg.type === "START_OCR_COMMAND") {
+      console.log("[background.js] Received START_OCR_COMMAND from side panel.");
+      // Trigger the OCR command programmatically
+      chrome.commands.onCommand.dispatch("start-ocr");
+      sendResponse({ ok: true, message: "OCR command triggered." });
+      return;
+    }
+
+    // Unknown message type
+    console.warn("[background.js] Unknown message type:", msg.type);
+    sendResponse({ ok: false, error: "Unknown message type" });
+    
+  } catch (error) {
+    console.error("[background.js] Error processing message:", error);
+    sendResponse({ ok: false, error: error.message });
+  }
+});
+
+// Handle extension errors
+chrome.runtime.onStartup.addListener(() => {
+  console.log("[background.js] Extension startup.");
+});
+
+// Clean up on extension suspend
+chrome.runtime.onSuspend.addListener(() => {
+  console.log("[background.js] Extension suspending.");
 });

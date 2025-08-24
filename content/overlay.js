@@ -1,139 +1,342 @@
-// content/overlay.js with Debugging
+// content/overlay.js with Enhanced Debugging and Security Fixes
 
 let overlay, rect, tip;
-let startX=0, startY=0, endX=0, endY=0;
+let startX = 0, startY = 0, endX = 0, endY = 0;
 let selecting = false;
+let isInjected = false;
 
-console.log("[overlay.js] Content script loaded.");
+// Security: Mark that this script has been injected
+window.ocrOverlayInjected = true;
 
+console.log("[overlay.js] Content script loaded and initialized.");
+
+// Enhanced message listener with validation
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log("[overlay.js] Message received:", msg);
-  if (msg?.type === "START_REGION_SELECT") {
-    startRegionSelect();
-    sendResponse({ ok: true });
+  console.log("[overlay.js] Message received:", msg, "from sender:", sender);
+  
+  // Security: Validate message structure
+  if (!msg || typeof msg !== 'object') {
+    console.warn("[overlay.js] Invalid message format received.");
+    sendResponse({ ok: false, error: "Invalid message format" });
+    return;
+  }
+
+  // Security: Ensure message comes from our extension
+  if (sender.id !== chrome.runtime.id) {
+    console.warn("[overlay.js] Message from unauthorized sender:", sender.id);
+    sendResponse({ ok: false, error: "Unauthorized sender" });
+    return;
+  }
+
+  try {
+    if (msg.type === "START_REGION_SELECT") {
+      startRegionSelect();
+      sendResponse({ ok: true, message: "Region selection started" });
+    } else {
+      console.warn("[overlay.js] Unknown message type:", msg.type);
+      sendResponse({ ok: false, error: "Unknown message type" });
+    }
+  } catch (error) {
+    console.error("[overlay.js] Error handling message:", error);
+    sendResponse({ ok: false, error: error.message });
   }
 });
 
 function startRegionSelect() {
   if (overlay) {
-    console.warn("[overlay.js] Overlay already exists. Ignoring request.");
-    return;
+    console.warn("[overlay.js] Overlay already exists. Cleaning up first.");
+    cleanup();
   }
+  
   console.log("[overlay.js] Starting region selection.");
   
-  overlay = document.createElement("div");
-  overlay.id = "gemini-ocr-overlay";
-  rect = document.createElement("div");
-  rect.id = "gemini-ocr-rect";
-  tip = document.createElement("div");
-  tip.id = "gemini-ocr-tip";
-  tip.textContent = "Drag to select region. Release to capture. ESC to cancel.";
-  
-  overlay.appendChild(rect);
-  document.body.appendChild(overlay);
-  document.body.appendChild(tip);
+  try {
+    // Create overlay elements with enhanced security
+    overlay = document.createElement("div");
+    overlay.id = "gemini-ocr-overlay";
+    
+    rect = document.createElement("div");
+    rect.id = "gemini-ocr-rect";
+    
+    tip = document.createElement("div");
+    tip.id = "gemini-ocr-tip";
+    tip.textContent = "Drag to select region. Release to capture. ESC to cancel.";
+    
+    // Security: Prevent any potential XSS by ensuring clean elements
+    overlay.innerHTML = "";
+    rect.innerHTML = "";
+    
+    overlay.appendChild(rect);
+    document.body.appendChild(overlay);
+    document.body.appendChild(tip);
 
-  overlay.addEventListener("mousedown", onDown, true);
-  overlay.addEventListener("mousemove", onMove, true);
-  overlay.addEventListener("mouseup", onUp, true);
-  window.addEventListener("keydown", onKey, true);
+    // Add event listeners with proper error handling
+    overlay.addEventListener("mousedown", onDown, { capture: true, passive: false });
+    overlay.addEventListener("mousemove", onMove, { capture: true, passive: false });
+    overlay.addEventListener("mouseup", onUp, { capture: true, passive: false });
+    overlay.addEventListener("contextmenu", onContextMenu, { capture: true, passive: false });
+    window.addEventListener("keydown", onKey, { capture: true, passive: false });
+    
+    console.log("[overlay.js] Overlay created and event listeners attached.");
+    isInjected = true;
+    
+  } catch (error) {
+    console.error("[overlay.js] Failed to create overlay:", error);
+    cleanup();
+  }
 }
 
-function onDown(e){ 
-  selecting = true; 
-  startX = e.clientX; 
+function onDown(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  selecting = true;
+  startX = e.clientX;
   startY = e.clientY;
   console.log(`[overlay.js] Mouse Down at (${startX}, ${startY})`);
-  updateRect(e); 
+  updateRect(e);
 }
 
-function onMove(e){ 
-  if (!selecting) return; 
-  updateRect(e); 
+function onMove(e) {
+  if (!selecting) return;
+  e.preventDefault();
+  e.stopPropagation();
+  updateRect(e);
 }
 
-function onUp(e){ 
-  if (!selecting) return; 
-  selecting = false; 
+function onUp(e) {
+  if (!selecting) return;
+  e.preventDefault();
+  e.stopPropagation();
+  
+  selecting = false;
   updateRect(e);
   console.log(`[overlay.js] Mouse Up at (${e.clientX}, ${e.clientY}). Capturing region.`);
-  captureRegion(); 
-  cleanup(); 
+  
+  // Small delay to ensure rect is properly updated
+  setTimeout(() => {
+    captureRegion();
+    cleanup();
+  }, 50);
 }
 
-function onKey(e){ 
+function onContextMenu(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  console.log("[overlay.js] Context menu prevented during selection.");
+}
+
+function onKey(e) {
   if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
     console.log("[overlay.js] Escape key pressed. Canceling selection.");
-    cleanup(); 
-  } 
+    cleanup();
+  }
 }
 
-function updateRect(e){
-  endX = e.clientX; endY = e.clientY;
+function updateRect(e) {
+  if (!rect) return;
+  
+  endX = e.clientX;
+  endY = e.clientY;
+  
   const x = Math.min(startX, endX);
   const y = Math.min(startY, endY);
   const w = Math.abs(startX - endX);
   const h = Math.abs(startY - endY);
-  rect.style.left = x + "px"; 
+  
+  rect.style.left = x + "px";
   rect.style.top = y + "px";
-  rect.style.width = w + "px"; 
+  rect.style.width = w + "px";
   rect.style.height = h + "px";
 }
 
 async function captureRegion() {
-  const x = parseInt(rect.style.left), y = parseInt(rect.style.top);
-  const w = parseInt(rect.style.width), h = parseInt(rect.style.height);
+  if (!rect) {
+    console.error("[overlay.js] No rect element found for capture.");
+    return;
+  }
 
-  if (!w || !h) {
-    console.warn("[overlay.js] Capture region has zero width or height. Aborting.");
+  const x = parseInt(rect.style.left) || 0;
+  const y = parseInt(rect.style.top) || 0;
+  const w = parseInt(rect.style.width) || 0;
+  const h = parseInt(rect.style.height) || 0;
+
+  // Validate capture dimensions
+  if (w < 10 || h < 10) {
+    console.warn("[overlay.js] Capture region too small. Minimum 10x10 pixels required.");
+    return;
+  }
+
+  if (w > 5000 || h > 5000) {
+    console.warn("[overlay.js] Capture region too large. Maximum 5000x5000 pixels allowed.");
     return;
   }
 
   console.log(`[overlay.js] Capturing area: { x: ${x}, y: ${y}, w: ${w}, h: ${h} }`);
-  try {
-    const tab = await chrome.tabs.captureVisibleTab(undefined, { format: "png" });
-    const dataUrl = await cropImage(tab, x, y, w, h);
-    console.log("[overlay.js] Capture successful. Sending dataUrl to background.");
-    chrome.runtime.sendMessage({ type: "REGION_CAPTURE_READY", dataUrl });
-  } catch(e) {
-    console.error("[overlay.js] Failed to capture or process region:", e);
-  }
-}
-
-function cleanup(){
-  console.log("[overlay.js] Cleaning up overlay elements and listeners.");
-  if (overlay) {
-    overlay.removeEventListener("mousedown", onDown, true);
-    overlay.removeEventListener("mousemove", onMove, true);
-    overlay.removeEventListener("mouseup", onUp, true);
-    overlay.parentNode.removeChild(overlay);
-  }
-  if (tip?.parentNode) tip.parentNode.removeChild(tip);
-  window.removeEventListener("keydown", onKey, true);
   
-  overlay = rect = tip = null;
-  selecting = false;
+  try {
+    // Security: Use chrome.runtime.sendMessage instead of direct tab capture
+    const response = await chrome.runtime.sendMessage({
+      type: "CAPTURE_VISIBLE_TAB_REQUEST",
+      region: { x, y, w, h }
+    });
+
+    if (response && response.ok) {
+      console.log("[overlay.js] Capture request sent successfully.");
+    } else {
+      console.error("[overlay.js] Capture request failed:", response?.error);
+    }
+    
+  } catch (error) {
+    console.error("[overlay.js] Failed to send capture request:", error);
+    
+    // Fallback: Try direct capture (this requires activeTab permission)
+    try {
+      const dataUrl = await captureVisibleTab();
+      const croppedDataUrl = await cropImage(dataUrl, x, y, w, h);
+      console.log("[overlay.js] Fallback capture successful. Sending dataUrl to background.");
+      
+      chrome.runtime.sendMessage({ 
+        type: "REGION_CAPTURE_READY", 
+        dataUrl: croppedDataUrl 
+      }).catch(msgError => {
+        console.error("[overlay.js] Failed to send capture data:", msgError);
+      });
+      
+    } catch (fallbackError) {
+      console.error("[overlay.js] Fallback capture also failed:", fallbackError);
+    }
+  }
 }
 
-function cropImage(dataUrl, x, y, w, h) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const devicePixelRatio = window.devicePixelRatio || 1;
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(w * devicePixelRatio);
-      canvas.height = Math.round(h * devicePixelRatio);
-      const ctx = canvas.getContext("2d");
-      
-      ctx.drawImage(
-        img,
-        Math.round(x * devicePixelRatio), Math.round(y * devicePixelRatio), // source x, y
-        Math.round(w * devicePixelRatio), Math.round(h * devicePixelRatio), // source width, height
-        0, 0, // destination x, y
-        canvas.width, canvas.height // destination width, height
-      );
-      resolve(canvas.toDataURL("image/png"));
-    };
-    img.src = dataUrl;
+// Helper function for direct tab capture
+async function captureVisibleTab() {
+  return new Promise((resolve, reject) => {
+    try {
+      // This approach works in content scripts with proper permissions
+      chrome.runtime.sendMessage({ type: "GET_TAB_CAPTURE" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response && response.dataUrl) {
+          resolve(response.dataUrl);
+        } else {
+          reject(new Error("No capture data received"));
+        }
+      });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
+
+function cleanup() {
+  console.log("[overlay.js] Cleaning up overlay elements and listeners.");
+  
+  try {
+    if (overlay) {
+      overlay.removeEventListener("mousedown", onDown, { capture: true });
+      overlay.removeEventListener("mousemove", onMove, { capture: true });
+      overlay.removeEventListener("mouseup", onUp, { capture: true });
+      overlay.removeEventListener("contextmenu", onContextMenu, { capture: true });
+      
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    }
+    
+    if (tip && tip.parentNode) {
+      tip.parentNode.removeChild(tip);
+    }
+    
+    window.removeEventListener("keydown", onKey, { capture: true });
+    
+  } catch (error) {
+    console.error("[overlay.js] Error during cleanup:", error);
+  } finally {
+    overlay = rect = tip = null;
+    selecting = false;
+    isInjected = false;
+  }
+}
+
+// Enhanced image cropping with error handling
+function cropImage(dataUrl, x, y, w, h) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Security: Validate dataUrl format
+      if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+        reject(new Error("Invalid dataUrl format"));
+        return;
+      }
+
+      const img = new Image();
+      
+      img.onload = () => {
+        try {
+          const devicePixelRatio = window.devicePixelRatio || 1;
+          const canvas = document.createElement("canvas");
+          
+          // Security: Limit canvas size to prevent memory issues
+          const maxCanvasSize = 4096;
+          const scaledW = Math.min(Math.round(w * devicePixelRatio), maxCanvasSize);
+          const scaledH = Math.min(Math.round(h * devicePixelRatio), maxCanvasSize);
+          
+          canvas.width = scaledW;
+          canvas.height = scaledH;
+          
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Failed to get canvas context"));
+            return;
+          }
+          
+          // Security: Clear canvas first
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          
+          ctx.drawImage(
+            img,
+            Math.round(x * devicePixelRatio), Math.round(y * devicePixelRatio),
+            Math.round(w * devicePixelRatio), Math.round(h * devicePixelRatio),
+            0, 0,
+            canvas.width, canvas.height
+          );
+          
+          const croppedDataUrl = canvas.toDataURL("image/png", 0.9);
+          console.log("[overlay.js] Image cropped successfully.");
+          resolve(croppedDataUrl);
+          
+        } catch (error) {
+          console.error("[overlay.js] Error during image cropping:", error);
+          reject(error);
+        }
+      };
+      
+      img.onerror = (error) => {
+        console.error("[overlay.js] Error loading image for cropping:", error);
+        reject(new Error("Failed to load image for cropping"));
+      };
+      
+      img.src = dataUrl;
+      
+    } catch (error) {
+      console.error("[overlay.js] Error in cropImage function:", error);
+      reject(error);
+    }
+  });
+}
+
+// Handle page unload
+window.addEventListener("beforeunload", () => {
+  console.log("[overlay.js] Page unloading. Cleaning up.");
+  cleanup();
+});
+
+// Handle visibility change
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && overlay) {
+    console.log("[overlay.js] Page hidden. Cleaning up overlay.");
+    cleanup();
+  }
+});

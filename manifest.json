@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gemini OCR SidePanel",
-  "version": "1.0.0",
-  "description": "Select screen regions for OCR (no keys) and send to Gemini in a side panel.",
+  "version": "1.0.1",
+  "description": "Select screen regions for OCR and send to Gemini in a side panel with enhanced security.",
   "action": {
     "default_title": "Gemini OCR SidePanel"
   },
@@ -49,17 +49,22 @@
     }
   },
   "icons": {
+    "16": "assets/sloth.png",
+    "48": "assets/sloth.png",
     "128": "assets/sloth.png"
   },
   "web_accessible_resources": [
     {
       "resources": [
-        "sidepanel/ocr/worker.min.js",
-        "sidepanel/ocr/tesseract.min.js"
+        "ocr/worker.min.js",
+        "ocr/tesseract.min.js"
       ],
       "matches": [
         "<all_urls>"
       ]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self';"
+  }
 }
