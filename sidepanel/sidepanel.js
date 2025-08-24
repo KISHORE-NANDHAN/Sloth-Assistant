@@ -19,11 +19,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   
   try {
     // Load saved data
-    const result = await chrome.storage.local.get(["lastOcrText", "lastError"]);
+    const result = await chrome.storage.local.get(["lastOcrText", "lastError", "lastCaptureData", "captureTimestamp"]);
     
     if (result.lastOcrText) {
       console.log("[sidepanel.js] Loaded last OCR text from storage.");
       promptEl.value = result.lastOcrText;
+    }
+    
+    // Check for recent capture data
+    if (result.lastCaptureData && result.captureTimestamp) {
+      const timeDiff = Date.now() - result.captureTimestamp;
+      if (timeDiff < 30000) { // Within 30 seconds
+        console.log("[sidepanel.js] Found recent capture data.");
+        lastCaptureDataUrl = result.lastCaptureData;
+        status("Region captured. Click 'Run OCR' to extract text.");
+        // Clear the stored data
+        chrome.storage.local.remove(["lastCaptureData", "captureTimestamp"]);
+      }
     }
     
     if (result.lastError) {
@@ -225,38 +237,24 @@ async function runOcr(dataUrl, lang = "eng") {
   }
 }
 
-// Enhanced message listener with validation
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log("[sidepanel.js] Message received:", msg, "from sender:", sender);
-  
-  // Security: Validate message structure and sender
-  if (!msg || typeof msg !== 'object') {
-    console.warn("[sidepanel.js] Invalid message format received.");
-    return;
-  }
-  
-  if (sender.id !== chrome.runtime.id) {
-    console.warn("[sidepanel.js] Message from unauthorized sender:", sender.id);
-    return;
-  }
-  
+// Poll for capture data updates
+setInterval(async () => {
   try {
-    if (msg.type === "REGION_CAPTURE_READY") {
-      console.log("[sidepanel.js] Received captured region dataUrl.");
-      
-      // Security: Validate dataUrl
-      if (msg.dataUrl && typeof msg.dataUrl === 'string' && msg.dataUrl.startsWith('data:image/')) {
-        lastCaptureDataUrl = msg.dataUrl;
+    const result = await chrome.storage.local.get(["lastCaptureData", "captureTimestamp"]);
+    if (result.lastCaptureData && result.captureTimestamp) {
+      const timeDiff = Date.now() - result.captureTimestamp;
+      if (timeDiff < 5000 && !lastCaptureDataUrl) { // Within 5 seconds and not already processed
+        console.log("[sidepanel.js] New capture data detected.");
+        lastCaptureDataUrl = result.lastCaptureData;
         status("Region captured. Click 'Run OCR' to extract text.");
-      } else {
-        console.error("[sidepanel.js] Invalid capture data received.");
-        status("Invalid capture data received.");
+        // Clear the stored data
+        chrome.storage.local.remove(["lastCaptureData", "captureTimestamp"]);
       }
     }
   } catch (error) {
-    console.error("[sidepanel.js] Error processing message:", error);
+    console.error("[sidepanel.js] Error polling for capture data:", error);
   }
-});
+}, 1000); // Check every second
 
 async function ensureGeminiTab() {
   console.log("[sidepanel.js] Ensuring Gemini tab exists.");

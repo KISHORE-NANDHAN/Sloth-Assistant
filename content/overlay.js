@@ -190,15 +190,19 @@ async function captureRegion() {
       const croppedDataUrl = await cropImage(response.dataUrl, x, y, w, h);
       
       // Send the cropped image to background for forwarding to sidepanel
-      chrome.runtime.sendMessage({ 
+      const storeResponse = await chrome.runtime.sendMessage({ 
         type: "REGION_CAPTURE_READY", 
         dataUrl: croppedDataUrl 
-      }).catch(msgError => {
-        console.error("[overlay.js] Failed to send cropped capture data:", msgError);
       });
       
+      if (storeResponse && storeResponse.ok) {
+        console.log("[overlay.js] Capture data stored successfully.");
+      } else {
+        console.error("[overlay.js] Failed to store capture data:", storeResponse?.error);
+      }
+      
     } else {
-      console.error("[overlay.js] Tab capture failed:", response?.error);
+      console.error("[overlay.js] Capture request failed:", response?.error || "Unknown error");
     }
     
   } catch (error) {

@@ -3,13 +3,21 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[background.js] Extension installed.");
   try {
-    chrome.sidePanel.setOptions({ 
-      path: "sidepanel/sidepanel.html", 
-      enabled: true 
-    });
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
     console.log("[background.js] Side panel options set successfully.");
   } catch (error) {
     console.error("[background.js] Failed to set side panel options:", error);
+  }
+});
+
+// Handle action click to open side panel
+chrome.action.onClicked.addListener(async (tab) => {
+  console.log("[background.js] Extension action clicked.");
+  try {
+    await chrome.sidePanel.open({ windowId: tab.windowId });
+    console.log("[background.js] Side panel opened via action click.");
+  } catch (error) {
+    console.error("[background.js] Failed to open side panel:", error);
   }
 });
 
@@ -22,7 +30,7 @@ chrome.commands.onCommand.addListener(async (cmd) => {
     if (cmd === "toggle-sidepanel") {
       if (tab?.id) {
         console.log(`[background.js] Toggling side panel for tabId: ${tab.id}`);
-        await chrome.sidePanel.open({ tabId: tab.id });
+        await chrome.sidePanel.open({ windowId: tab.windowId });
         console.log("[background.js] Side panel opened successfully.");
       } else {
         console.warn("[background.js] No active tab found to toggle side panel.");
@@ -43,7 +51,7 @@ chrome.commands.onCommand.addListener(async (cmd) => {
         chrome.storage.local.set({ 
           lastError: "Cannot capture from protected pages (chrome://, extension pages, etc.)" 
         });
-        await chrome.sidePanel.open({ tabId: tab.id });
+        await chrome.sidePanel.open({ windowId: tab.windowId });
         return;
       }
 
@@ -93,7 +101,7 @@ chrome.commands.onCommand.addListener(async (cmd) => {
         chrome.storage.local.set({ 
           lastError: `Failed to inject scripts: ${injectionError.message}` 
         });
-        await chrome.sidePanel.open({ tabId: tab.id });
+        await chrome.sidePanel.open({ windowId: tab.windowId });
       }
     }
   } catch (error) {
@@ -148,7 +156,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.storage.local.set({ lastOcrText: text }).then(async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-          await chrome.sidePanel.open({ tabId: tab.id });
+          await chrome.sidePanel.open({ windowId: tab.windowId });
           console.log("[background.js] Side panel opened after OCR text ready.");
         }
         sendResponse({ ok: true, message: "Text stored and side panel opened." });
@@ -164,9 +172,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       
       // Security: Validate dataUrl format
       if (msg.dataUrl && typeof msg.dataUrl === 'string' && msg.dataUrl.startsWith('data:image/')) {
-        // Forward the message to the side panel
-        chrome.runtime.sendMessage(msg).catch(error => {
-          console.error("[background.js] Failed to forward message to side panel:", error);
+        // Store the capture data for the side panel to retrieve
+        chrome.storage.local.set({ 
+          lastCaptureData: msg.dataUrl,
+          captureTimestamp: Date.now()
+        }).then(() => {
+          console.log("[background.js] Capture data stored successfully.");
+        }).catch(error => {
+          console.error("[background.js] Failed to store capture data:", error);
         });
         sendResponse({ ok: true, message: "Capture data forwarded." });
       } else {
