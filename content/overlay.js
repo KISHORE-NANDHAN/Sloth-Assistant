@@ -177,58 +177,33 @@ async function captureRegion() {
   console.log(`[overlay.js] Capturing area: { x: ${x}, y: ${y}, w: ${w}, h: ${h} }`);
   
   try {
-    // Security: Use chrome.runtime.sendMessage instead of direct tab capture
+    // Request background script to capture the visible tab
+    console.log("[overlay.js] Requesting tab capture from background script.");
+    
     const response = await chrome.runtime.sendMessage({
-      type: "CAPTURE_VISIBLE_TAB_REQUEST",
+      type: "REQUEST_TAB_CAPTURE",
       region: { x, y, w, h }
     });
 
-    if (response && response.ok) {
-      console.log("[overlay.js] Capture request sent successfully.");
-    } else {
-      console.error("[overlay.js] Capture request failed:", response?.error);
-    }
-    
-  } catch (error) {
-    console.error("[overlay.js] Failed to send capture request:", error);
-    
-    // Fallback: Try direct capture (this requires activeTab permission)
-    try {
-      const dataUrl = await captureVisibleTab();
-      const croppedDataUrl = await cropImage(dataUrl, x, y, w, h);
-      console.log("[overlay.js] Fallback capture successful. Sending dataUrl to background.");
+    if (response && response.success && response.dataUrl) {
+      console.log("[overlay.js] Received capture data from background. Processing...");
+      const croppedDataUrl = await cropImage(response.dataUrl, x, y, w, h);
       
+      // Send the cropped image to background for forwarding to sidepanel
       chrome.runtime.sendMessage({ 
         type: "REGION_CAPTURE_READY", 
         dataUrl: croppedDataUrl 
       }).catch(msgError => {
-        console.error("[overlay.js] Failed to send capture data:", msgError);
+        console.error("[overlay.js] Failed to send cropped capture data:", msgError);
       });
       
-    } catch (fallbackError) {
-      console.error("[overlay.js] Fallback capture also failed:", fallbackError);
+    } else {
+      console.error("[overlay.js] Tab capture failed:", response?.error);
     }
+    
+  } catch (error) {
+    console.error("[overlay.js] Failed to capture region:", error);
   }
-}
-
-// Helper function for direct tab capture
-async function captureVisibleTab() {
-  return new Promise((resolve, reject) => {
-    try {
-      // This approach works in content scripts with proper permissions
-      chrome.runtime.sendMessage({ type: "GET_TAB_CAPTURE" }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else if (response && response.dataUrl) {
-          resolve(response.dataUrl);
-        } else {
-          reject(new Error("No capture data received"));
-        }
-      });
-    } catch (error) {
-      reject(error);
-    }
-  });
 }
 
 function cleanup() {

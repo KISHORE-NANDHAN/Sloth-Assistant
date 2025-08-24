@@ -120,6 +120,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   try {
+    if (msg.type === "REQUEST_TAB_CAPTURE") {
+      console.log("[background.js] Received REQUEST_TAB_CAPTURE message.");
+      
+      // Capture the visible tab
+      chrome.tabs.captureVisibleTab(null, { format: 'png', quality: 90 }, (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          console.error("[background.js] Failed to capture tab:", chrome.runtime.lastError.message);
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else if (dataUrl) {
+          console.log("[background.js] Tab captured successfully. Sending dataUrl back.");
+          sendResponse({ success: true, dataUrl: dataUrl });
+        } else {
+          console.error("[background.js] No capture data received.");
+          sendResponse({ success: false, error: "No capture data received" });
+        }
+      });
+      return true; // Indicates async response
+    }
+    
     if (msg.type === "OCR_TEXT_READY") {
       console.log("[background.js] Received OCR text. Storing and opening side panel.");
       
