@@ -3,7 +3,9 @@
   "name": "Gemini OCR SidePanel",
   "version": "1.0.0",
   "description": "Select screen regions for OCR (no keys) and send to Gemini in a side panel.",
-  "action": { "default_title": "Gemini OCR SidePanel" },
+  "action": {
+    "default_title": "Gemini OCR SidePanel"
+  },
   "permissions": [
     "activeTab",
     "scripting",
@@ -23,28 +25,41 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "css": ["content/overlay.css"],
-      "js": ["content/overlay.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://gemini.google.com/*"],
-      "js": ["content/gemini_inject.js"],
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content/gemini_interact.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "commands": {
     "toggle-sidepanel": {
-      "suggested_key": { "default": "Alt+G" },
+      "suggested_key": {
+        "default": "Alt+G"
+      },
       "description": "Open Gemini Side Panel"
     },
     "start-ocr": {
-      "suggested_key": { "default": "Alt+O" },
+      "suggested_key": {
+        "default": "Alt+O"
+      },
       "description": "Start region selection for OCR"
     }
   },
   "icons": {
     "128": "assets/sloth.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sidepanel/ocr/worker.min.js",
+        "sidepanel/ocr/tesseract.min.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

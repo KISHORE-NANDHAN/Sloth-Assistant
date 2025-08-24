@@ -2,6 +2,8 @@ let slothSidebar = null;
 
 // content.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("Message received:", msg);
+  sendResponse({ status: "ok" });
   if (message.action === "toggleSidebar") {
     console.log("Received toggleSidebar from popup");
     toggleSidebar(); // your injected sidebar function

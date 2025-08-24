@@ -29,10 +29,10 @@
     <small id="status"></small>
   </footer>
 
-  <script src="ocr/tesseract.min.js"></script>
+  <script src="../ocr/tesseract.min.js"></script>
   <script>
     // Tesseract worker path
-    const TESSERACT_WORKER = chrome.runtime.getURL("ocr/worker.min.js");
+    const TESSERACT_WORKER = chrome.runtime.getURL("../ocr/worker.min.js");
     Tesseract.createWorker = ((orig) => async (opts={}) => {
       opts.workerPath = opts.workerPath || TESSERACT_WORKER;
       return orig(opts);
