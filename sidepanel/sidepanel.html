@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Gemini OCR SidePanel</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header>
+    <h1>Gemini Assistant</h1>
+    <button id="captureBtn" title="Alt+O">Capture (OCR)</button>
+  </header>
+
+  <section>
+    <label>Captured / Editable Text</label>
+    <textarea id="prompt" placeholder="Your text will appear here..."></textarea>
+  </section>
+
+  <footer>
+    <select id="lang">
+      <option value="eng" selected>English (eng)</option>
+      <option value="spa">Spanish (spa)</option>
+      <option value="fra">French (fra)</option>
+      <option value="deu">German (deu)</option>
+      <!-- Add more traineddata langs as needed -->
+    </select>
+    <button id="ocrBtn">Run OCR</button>
+    <button id="askGeminiBtn">Ask Gemini</button>
+    <small id="status"></small>
+  </footer>
+
+  <script src="ocr/tesseract.min.js"></script>
+  <script>
+    // Tesseract worker path
+    const TESSERACT_WORKER = chrome.runtime.getURL("ocr/worker.min.js");
+    Tesseract.createWorker = ((orig) => async (opts={}) => {
+      opts.workerPath = opts.workerPath || TESSERACT_WORKER;
+      return orig(opts);
+    })(Tesseract.createWorker);
+  </script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

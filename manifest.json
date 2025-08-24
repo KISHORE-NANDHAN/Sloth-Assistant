@@ -1,31 +1,50 @@
 {
   "manifest_version": 3,
-  "name": "Sloth AI Assistant",
-  "description": "AI-powered Chrome extension with OCR and sidebar assistant.",
-  "version": "1.0",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "name": "Gemini OCR SidePanel",
+  "version": "1.0.0",
+  "description": "Select screen regions for OCR (no keys) and send to Gemini in a side panel.",
+  "action": { "default_title": "Gemini OCR SidePanel" },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "sidePanel",
+    "commands"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
-  "action": {
-    "default_popup": "popup/popup.html",
-    "default_icon": {
-      "16": "./assets/sloth.png",
-      "48": "./assets/sloth.png",
-      "128": "./assets/sloth.png"
-    }
+  "side_panel": {
+    "default_path": "./sidepanel/sidepanel.html"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["./content/content.js"]
+      "css": ["content/overlay.css"],
+      "js": ["content/overlay.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content/gemini_inject.js"],
+      "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["assets/sloth.png"],
-      "matches": ["<all_urls>"]
+  "commands": {
+    "toggle-sidepanel": {
+      "suggested_key": { "default": "Alt+G" },
+      "description": "Open Gemini Side Panel"
+    },
+    "start-ocr": {
+      "suggested_key": { "default": "Alt+O" },
+      "description": "Start region selection for OCR"
     }
-  ]
+  },
+  "icons": {
+    "128": "assets/sloth.png"
+  }
 }
