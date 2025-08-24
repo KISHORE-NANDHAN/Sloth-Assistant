@@ -3,7 +3,7 @@
 let overlay, rect, tip;
 let startX = 0, startY = 0, endX = 0, endY = 0;
 let selecting = false;
-let isInjected = false;
+let overlayActive = false;
 
 // Security: Mark that this script has been injected
 window.ocrOverlayInjected = true;
@@ -43,11 +43,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 function startRegionSelect() {
-  if (overlay) {
+  if (overlayActive || overlay) {
     console.warn("[overlay.js] Overlay already exists. Cleaning up first.");
     cleanup();
+    // Small delay to ensure cleanup is complete
+    setTimeout(() => {
+      createOverlay();
+    }, 100);
+    return;
   }
   
+  createOverlay();
+}
+
+function createOverlay() {
   console.log("[overlay.js] Starting region selection.");
   
   try {
@@ -78,7 +87,7 @@ function startRegionSelect() {
     window.addEventListener("keydown", onKey, { capture: true, passive: false });
     
     console.log("[overlay.js] Overlay created and event listeners attached.");
-    isInjected = true;
+    overlayActive = true;
     
   } catch (error) {
     console.error("[overlay.js] Failed to create overlay:", error);
@@ -236,7 +245,7 @@ function cleanup() {
   } finally {
     overlay = rect = tip = null;
     selecting = false;
-    isInjected = false;
+    overlayActive = false;
   }
 }
 

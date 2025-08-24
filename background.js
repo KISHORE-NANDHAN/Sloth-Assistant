@@ -152,18 +152,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       
       // Security: Validate and sanitize text input
       const text = typeof msg.text === 'string' ? msg.text.slice(0, 50000) : ""; // Limit text size
-      
-      chrome.storage.local.set({ lastOcrText: text }).then(async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-          await chrome.sidePanel.open({ windowId: tab.windowId });
-          console.log("[background.js] Side panel opened after OCR text ready.");
-        }
-        sendResponse({ ok: true, message: "Text stored and side panel opened." });
-      }).catch(error => {
-        console.error("[background.js] Failed to store OCR text:", error);
-        sendResponse({ ok: false, error: error.message });
-      });
+      // Open Gemini directly with the OCR text
+      await openGeminiWithText(text);
+      sendResponse({ ok: true, message: "Gemini opened with OCR text." });
       return true; // Indicates async response
     }
     
@@ -216,3 +207,127 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onSuspend.addListener(() => {
   console.log("[background.js] Extension suspending.");
 });
+
+// Function to open Gemini with OCR text
+async function openGeminiWithText(text) {
+  try {
+    console.log("[background.js] Opening Gemini with OCR text.");
+    
+    // Find or create Gemini tab
+    let geminiTab = await findOrCreateGeminiTab();
+    
+    // Wait for tab to load if needed
+    if (geminiTab.status !== 'complete') {
+      await waitForTabToLoad(geminiTab.id);
+    }
+    
+    // Focus the Gemini tab
+    await chrome.tabs.update(geminiTab.id, { active: true });
+    
+    // Wait a moment for tab to be ready
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Inject script to fill the text
+    await chrome.scripting.executeScript({
+      target: { tabId: geminiTab.id },
+      func: fillGeminiInput,
+      args: [text]
+    });
+    
+    console.log("[background.js] OCR text filled in Gemini successfully.");
+    
+  } catch (error) {
+    console.error("[background.js] Failed to open Gemini with text:", error);
+    // Fallback: open side panel
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) {
+      await chrome.storage.local.set({ lastOcrText: text });
+      await chrome.sidePanel.open({ windowId: tab.windowId });
+    }
+  }
+}
+
+async function findOrCreateGeminiTab() {
+  // Look for existing Gemini tab
+  const tabs = await chrome.tabs.query({ url: "https://gemini.google.com/*" });
+  
+  if (tabs.length > 0) {
+    console.log("[background.js] Found existing Gemini tab.");
+    return tabs[0];
+  }
+  
+  // Create new Gemini tab
+  console.log("[background.js] Creating new Gemini tab.");
+  return await chrome.tabs.create({ 
+    url: "https://gemini.google.com/app",
+    active: true
+  });
+}
+
+async function waitForTabToLoad(tabId) {
+  return new Promise((resolve) => {
+    const listener = (changedTabId, changeInfo) => {
+      if (changedTabId === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 10000);
+  });
+}
+
+// Function to be injected into Gemini page
+function fillGeminiInput(text) {
+  console.log("[Injected Script] Filling Gemini input with OCR text.");
+  
+  // Multiple strategies to find the input
+  const selectors = [
+    'textarea[placeholder*="Enter a prompt here"]',
+    'textarea[aria-label*="Message"]',
+    'textarea[placeholder*="Message"]',
+    'textarea[placeholder*="Ask"]',
+    '.ql-editor.textarea',
+    '[contenteditable="true"]',
+    'textarea:not([readonly]):not([disabled])'
+  ];
+  
+  let input = null;
+  
+  for (const selector of selectors) {
+    const elements = document.querySelectorAll(selector);
+    for (const element of elements) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 100 && rect.height > 30) { // Reasonable size
+        input = element;
+        break;
+      }
+    }
+    if (input) break;
+  }
+  
+  if (!input) {
+    console.warn("[Injected Script] Could not find Gemini input field.");
+    return;
+  }
+  
+  // Focus and fill the input
+  input.focus();
+  
+  if (input.contentEditable === 'true') {
+    // For contenteditable elements
+    input.textContent = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    // For textarea elements
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  
+  console.log("[Injected Script] OCR text filled successfully.");

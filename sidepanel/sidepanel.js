@@ -113,7 +113,7 @@ askGeminiBtn.addEventListener("click", async () => {
   const text = promptEl.value.trim();
   if (!text) {
     console.warn("[sidepanel.js] Prompt is empty. Nothing to send.");
-    status("Nothing to send.");
+    status("Please enter some text or capture a region first.");
     return;
   }
   
@@ -256,100 +256,30 @@ setInterval(async () => {
   }
 }, 1000); // Check every second
 
-async function ensureGeminiTab() {
-  console.log("[sidepanel.js] Ensuring Gemini tab exists.");
-  
-  try {
-    const tabs = await chrome.tabs.query({ url: "https://gemini.google.com/*" });
-    
-    if (tabs.length > 0) {
-      console.log(`[sidepanel.js] Found existing Gemini tab: ${tabs[0].id}`);
-      return tabs[0];
-    }
-    
-    console.log("[sidepanel.js] No Gemini tab found. Creating a new one.");
-    return await chrome.tabs.create({ 
-      url: "https://gemini.google.com/app",
-      active: false // Don't immediately switch to the new tab
-    });
-    
-  } catch (error) {
-    console.error("[sidepanel.js] Error managing Gemini tab:", error);
-    throw error;
-  }
-}
 
 async function sendToGemini(text) {
   console.log("[sidepanel.js] Preparing to send text to Gemini.");
-  status("Sending to Gemini...", 0);
+  status("Opening Gemini...", 0);
   
   // Disable button during send
   askGeminiBtn.disabled = true;
   
   try {
-    // Security: Final text validation and sanitization
-    if (!text || typeof text !== 'string') {
-      throw new Error("Invalid text format");
-    }
-    
-    const sanitizedText = text.trim().slice(0, 10000);
-    if (!sanitizedText) {
-      throw new Error("No text to send");
-    }
-    
-    const tab = await ensureGeminiTab();
-    console.log(`[sidepanel.js] Using Gemini tabId: ${tab.id}`);
-    
-    // Wait for tab to load if it's new
-    if (tab.status !== 'complete') {
-      console.log("[sidepanel.js] Waiting for Gemini tab to load...");
-      status("Waiting for Gemini to load...", 0);
-      
-      await new Promise((resolve) => {
-        const listener = (tabId, changeInfo) => {
-          if (tabId === tab.id && changeInfo.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve();
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-        
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          chrome.tabs.onUpdated.removeListener(listener);
-          resolve();
-        }, 10000);
-      });
-    }
-    
-    // Focus the Gemini tab
-    await chrome.tabs.update(tab.id, { active: true });
-    
-    // Wait a moment for tab to be ready
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    console.log("[sidepanel.js] Injecting script to send text to Gemini.");
-    
-    // Inject the interaction script
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: (payload) => {
-        console.log("[Injected Script] Sending message to Gemini page:", payload);
-        window.postMessage({ 
-          __GEMINI_EXT__: true, 
-          type: "PASTE_AND_SEND", 
-          payload 
-        }, "*");
-      },
-      args: [{ text: sanitizedText }]
+    // Send message to background to open Gemini with text
+    const response = await chrome.runtime.sendMessage({
+      type: "OCR_TEXT_READY",
+      text: text
     });
     
-    status("Text sent to Gemini successfully!");
-    console.log("[sidepanel.js] Text sent to Gemini successfully.");
+    if (response && response.ok) {
+      status("Gemini opened with text!");
+    } else {
+      throw new Error(response?.error || "Failed to open Gemini");
+    }
     
   } catch (error) {
-    console.error("[sidepanel.js] Failed to send to Gemini:", error);
-    status(`Failed to send: ${error.message}`);
+    console.error("[sidepanel.js] Failed to open Gemini:", error);
+    status(`Failed to open Gemini: ${error.message}`);
   } finally {
     // Re-enable button
     askGeminiBtn.disabled = false;
