@@ -2,35 +2,59 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Gemini OCR SidePanel</title>
-  <link rel="stylesheet" href="sidepanel.css" />
+  <title>Gemini Side Panel</title>
+  <style>
+    body { 
+      margin: 0; 
+      padding: 0; 
+      height: 100vh; 
+      overflow: hidden; 
+    }
+    
+    #gemini-frame { 
+      width: 100%; 
+      height: 100%; 
+      border: none; 
+    }
+    
+    #capture-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    #capture-overlay:hover {
+      background: rgba(0, 0, 0, 0.9);
+    }
+    
+    #status {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-align: center;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-  <header>
-    <h1>Gemini Assistant</h1>
-    <button id="captureBtn" title="Alt+O">Capture (OCR)</button>
-  </header>
-
-  <section>
-    <label>Captured / Editable Text</label>
-    <textarea id="prompt" placeholder="Your text will appear here..."></textarea>
-  </section>
-
-  <footer>
-    <select id="lang">
-      <option value="eng" selected>English (eng)</option>
-      <option value="spa">Spanish (spa)</option>
-      <option value="fra">French (fra)</option>
-      <option value="deu">German (deu)</option>
-      <!-- Add more traineddata langs as needed -->
-    </select>
-    <button id="ocrBtn">Run OCR</button>
-    <button id="askGeminiBtn">Ask Gemini</button>
-    <small id="status"></small>
-  </footer>
-
-  <script src="../ocr/tesseract.min.js"></script>
-  <script src="tesseract-config.js"></script>
+  <div id="capture-overlay" title="Alt+O - Capture text from page">📷 OCR Capture</div>
+  <div id="status"></div>
+  <iframe id="gemini-frame" src="https://gemini.google.com/app"></iframe>
+  
   <script src="sidepanel.js"></script>
 </body>
 </html>

@@ -1,323 +1,114 @@
-// sidepanel/sidepanel.js with Enhanced Security and Debugging
+// sidepanel/sidepanel.js - Real Gemini with Auto OCR Injection
 
-const promptEl = document.getElementById("prompt");
+const captureBtn = document.getElementById("capture-overlay");
 const statusEl = document.getElementById("status");
-const langEl = document.getElementById("lang");
-const captureBtn = document.getElementById("captureBtn");
-const ocrBtn = document.getElementById("ocrBtn");
-const askGeminiBtn = document.getElementById("askGeminiBtn");
+const geminiFrame = document.getElementById("gemini-frame");
 
-let lastCaptureDataUrl = null; // holds screenshot data from overlay
-let ocrWorker = null; // Tesseract worker instance
+let pendingOcrText = null;
 
-console.log("[sidepanel.js] Script loaded and initialized.");
+console.log("[sidepanel.js] Real Gemini side panel loaded.");
 
-// --- Enhanced Event Listeners with Error Handling ---
+// Event Listeners
+captureBtn.addEventListener("click", startCapture);
 
-document.addEventListener("DOMContentLoaded", async () => {
-  console.log("[sidepanel.js] DOM content loaded.");
+// Listen for messages from background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("[sidepanel.js] Message received:", message);
   
-  try {
-    // Load saved data
-    const result = await chrome.storage.local.get(["lastOcrText", "lastError", "lastCaptureData", "captureTimestamp"]);
-    
-    if (result.lastOcrText) {
-      console.log("[sidepanel.js] Loaded last OCR text from storage.");
-      promptEl.value = result.lastOcrText;
-    }
-    
-    // Check for recent capture data
-    if (result.lastCaptureData && result.captureTimestamp) {
-      const timeDiff = Date.now() - result.captureTimestamp;
-      if (timeDiff < 30000) { // Within 30 seconds
-        console.log("[sidepanel.js] Found recent capture data.");
-        lastCaptureDataUrl = result.lastCaptureData;
-        status("Region captured. Click 'Run OCR' to extract text.");
-        // Clear the stored data
-        chrome.storage.local.remove(["lastCaptureData", "captureTimestamp"]);
-      }
-    }
-    
-    if (result.lastError) {
-      console.log("[sidepanel.js] Displaying last error:", result.lastError);
-      status(result.lastError, 5000);
-      // Clear the error after displaying
-      chrome.storage.local.remove(["lastError"]);
-    }
-    
-  } catch (error) {
-    console.error("[sidepanel.js] Error loading saved data:", error);
-    status("Error loading saved data.");
+  if (message.type === "OCR_TEXT_READY") {
+    console.log("[sidepanel.js] OCR text ready for injection:", message.text);
+    pendingOcrText = message.text;
+    injectTextIntoGemini(message.text);
+    sendResponse({ success: true });
+  }
+  
+  if (message.type === "CAPTURE_STATUS") {
+    showStatus(message.status, message.duration);
+    sendResponse({ success: true });
   }
 });
 
-captureBtn.addEventListener("click", async () => {
-  console.log("[sidepanel.js] 'Capture (OCR)' button clicked.");
+// Check for pending OCR text on load
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    const result = await chrome.storage.local.get(["pendingOcrText"]);
+    if (result.pendingOcrText) {
+      console.log("[sidepanel.js] Found pending OCR text on load.");
+      pendingOcrText = result.pendingOcrText;
+      // Wait for Gemini to load, then inject
+      setTimeout(() => {
+        injectTextIntoGemini(result.pendingOcrText);
+      }, 3000);
+      // Clear the pending text
+      chrome.storage.local.remove(["pendingOcrText"]);
+    }
+  } catch (error) {
+    console.error("[sidepanel.js] Error checking for pending OCR text:", error);
+  }
+});
+
+async function startCapture() {
+  console.log("[sidepanel.js] Starting OCR capture.");
+  showStatus("Click and drag to select text region...", 0);
   
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    if (!tab?.id) {
-      console.warn("[sidepanel.js] No active tab found to start capture.");
-      status("No active tab found.");
-      return;
-    }
-    
-    // Security: Check if tab URL is capturable
-    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-      status("Cannot capture from protected pages.");
-      return;
-    }
-    
-    console.log(`[sidepanel.js] Sending capture request for tabId: ${tab.id}`);
-    
-    // Send message to background script to start OCR
     const response = await chrome.runtime.sendMessage({ type: "START_OCR_COMMAND" });
-    
-    if (response && response.ok) {
-      status("Select a region on the page...", 0);
-    } else {
-      console.error("[sidepanel.js] Failed to start OCR:", response?.error);
-      status("Failed to start capture.");
+    if (!response || !response.ok) {
+      showStatus("Failed to start capture", 3000);
     }
-    
   } catch (error) {
     console.error("[sidepanel.js] Error starting capture:", error);
-    status("Error starting capture.");
+    showStatus("Error starting capture", 3000);
   }
-});
+}
 
-ocrBtn.addEventListener("click", async () => {
-  console.log("[sidepanel.js] 'Run OCR' button clicked.");
-  
-  if (!lastCaptureDataUrl) {
-    const msg = "No capture data found. Click 'Capture (OCR)' first.";
-    console.warn(`[sidepanel.js] ${msg}`);
-    status(msg);
+function injectTextIntoGemini(text) {
+  if (!text || !text.trim()) {
+    console.warn("[sidepanel.js] No text to inject.");
     return;
   }
   
-  // Security: Validate dataUrl format
-  if (!lastCaptureDataUrl.startsWith('data:image/')) {
-    console.error("[sidepanel.js] Invalid capture data format.");
-    status("Invalid capture data.");
-    return;
-  }
+  console.log("[sidepanel.js] Injecting text into Gemini iframe.");
+  showStatus("Injecting OCR text into Gemini...", 2000);
   
-  await runOcr(lastCaptureDataUrl, langEl.value);
-});
-
-askGeminiBtn.addEventListener("click", async () => {
-  console.log("[sidepanel.js] 'Ask Gemini' button clicked.");
-  
-  const text = promptEl.value.trim();
-  if (!text) {
-    console.warn("[sidepanel.js] Prompt is empty. Nothing to send.");
-    status("Please enter some text or capture a region first.");
-    return;
-  }
-  
-  // Security: Validate text length
-  if (text.length > 10000) {
-    console.warn("[sidepanel.js] Text too long. Truncating to 10000 characters.");
-    promptEl.value = text.slice(0, 10000);
-  }
-  
-  await sendToGemini(promptEl.value.trim());
-});
-
-// Auto-save text changes
-promptEl.addEventListener("input", debounce(async () => {
   try {
-    await chrome.storage.local.set({ lastOcrText: promptEl.value });
-    console.log("[sidepanel.js] Text auto-saved.");
+    // Send message to the iframe content
+    geminiFrame.contentWindow.postMessage({
+      type: "INJECT_OCR_TEXT",
+      text: text.trim()
+    }, "https://gemini.google.com");
+    
+    console.log("[sidepanel.js] Text injection message sent to Gemini iframe.");
+    
   } catch (error) {
-    console.error("[sidepanel.js] Failed to auto-save text:", error);
+    console.error("[sidepanel.js] Error injecting text:", error);
+    showStatus("Failed to inject text", 3000);
   }
-}, 1000));
+}
 
-// --- Enhanced Functions with Security and Error Handling ---
-
-function status(text, duration = 2500) {
-  console.log(`[sidepanel.js] Status update: ${text}`);
-  
-  // Security: Sanitize status text
-  const sanitizedText = String(text).slice(0, 200); // Limit length
-  statusEl.textContent = sanitizedText;
+function showStatus(message, duration = 2000) {
+  console.log(`[sidepanel.js] Status: ${message}`);
+  statusEl.textContent = message;
+  statusEl.style.display = "block";
   
   if (duration > 0) {
     setTimeout(() => {
-      statusEl.textContent = "";
+      statusEl.style.display = "none";
     }, duration);
   }
 }
 
-async function runOcr(dataUrl, lang = "eng") {
-  console.log(`[sidepanel.js] Starting OCR with language: ${lang}`);
-  status("Starting OCR...", 0);
+// Handle iframe load
+geminiFrame.addEventListener("load", () => {
+  console.log("[sidepanel.js] Gemini iframe loaded.");
   
-  // Disable buttons during OCR
-  ocrBtn.disabled = true;
-  captureBtn.disabled = true;
-  
-  try {
-    // Security: Validate language parameter
-    const allowedLanguages = ['eng', 'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'chi_sim', 'jpn', 'kor'];
-    const safeLang = allowedLanguages.includes(lang) ? lang : 'eng';
-    
-    if (safeLang !== lang) {
-      console.warn(`[sidepanel.js] Invalid language '${lang}', using 'eng' instead.`);
-    }
-    
-    console.log(`[sidepanel.js] Creating Tesseract worker for language: ${safeLang}`);
-    
-    // Create worker with enhanced configuration
-    ocrWorker = await Tesseract.createWorker({
-      logger: (m) => {
-        console.log(`[Tesseract Worker] ${m.status}: ${(m.progress * 100).toFixed(1)}%`);
-        if (m.status === 'recognizing text') {
-          status(`OCR Progress: ${(m.progress * 100).toFixed(1)}%`, 0);
-        }
-      },
-      errorHandler: (error) => {
-        console.error("[Tesseract Worker] Error:", error);
-      }
-    });
-    
-    console.log("[sidepanel.js] Loading language...");
-    status("Loading OCR language...", 0);
-    await ocrWorker.loadLanguage(safeLang);
-    
-    console.log("[sidepanel.js] Initializing language...");
-    status("Initializing OCR...", 0);
-    await ocrWorker.initialize(safeLang);
-    
-    // Configure OCR parameters for better accuracy
-    await ocrWorker.setParameters({
-      tessedit_char_whitelist: '', // Allow all characters
-      tessedit_pageseg_mode: Tesseract.PSM.AUTO, // Automatic page segmentation
-      preserve_interword_spaces: '1'
-    });
-    
-    console.log("[sidepanel.js] Recognizing text from image...");
-    status("Recognizing text...", 0);
-    
-    const { data: { text, confidence } } = await ocrWorker.recognize(dataUrl);
-    
-    console.log(`[sidepanel.js] OCR recognition complete. Confidence: ${confidence}%`);
-    
-    await ocrWorker.terminate();
-    ocrWorker = null;
-    
-    // Security: Sanitize OCR result
-    const sanitizedText = text.trim().slice(0, 50000); // Limit to 50k characters
-    
-    promptEl.value = sanitizedText;
-    await chrome.storage.local.set({ lastOcrText: sanitizedText });
-    
-    status(`OCR completed! Confidence: ${confidence.toFixed(1)}%`);
-    
-  } catch (error) {
-    console.error("[sidepanel.js] OCR process failed:", error);
-    status("OCR failed. Check console for details.");
-    
-    // Clean up worker on error
-    if (ocrWorker) {
-      try {
-        await ocrWorker.terminate();
-      } catch (terminateError) {
-        console.error("[sidepanel.js] Failed to terminate OCR worker:", terminateError);
-      }
-      ocrWorker = null;
-    }
-  } finally {
-    // Re-enable buttons
-    ocrBtn.disabled = false;
-    captureBtn.disabled = false;
-  }
-}
-
-// Poll for capture data updates
-setInterval(async () => {
-  try {
-    const result = await chrome.storage.local.get(["lastCaptureData", "captureTimestamp"]);
-    if (result.lastCaptureData && result.captureTimestamp) {
-      const timeDiff = Date.now() - result.captureTimestamp;
-      if (timeDiff < 5000 && !lastCaptureDataUrl) { // Within 5 seconds and not already processed
-        console.log("[sidepanel.js] New capture data detected.");
-        lastCaptureDataUrl = result.lastCaptureData;
-        status("Region captured. Click 'Run OCR' to extract text.");
-        // Clear the stored data
-        chrome.storage.local.remove(["lastCaptureData", "captureTimestamp"]);
-      }
-    }
-  } catch (error) {
-    console.error("[sidepanel.js] Error polling for capture data:", error);
-  }
-}, 1000); // Check every second
-
-
-async function sendToGemini(text) {
-  console.log("[sidepanel.js] Preparing to send text to Gemini.");
-  status("Opening Gemini...", 0);
-  
-  // Disable button during send
-  askGeminiBtn.disabled = true;
-  
-  try {
-    // Send message to background to open Gemini with text
-    const response = await chrome.runtime.sendMessage({
-      type: "OCR_TEXT_READY",
-      text: text
-    });
-    
-    if (response && response.ok) {
-      status("Gemini opened with text!");
-    } else {
-      throw new Error(response?.error || "Failed to open Gemini");
-    }
-    
-  } catch (error) {
-    console.error("[sidepanel.js] Failed to open Gemini:", error);
-    status(`Failed to open Gemini: ${error.message}`);
-  } finally {
-    // Re-enable button
-    askGeminiBtn.disabled = false;
-  }
-}
-
-// Utility function for debouncing
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-// Handle page unload
-window.addEventListener("beforeunload", async () => {
-  console.log("[sidepanel.js] Page unloading. Cleaning up.");
-  
-  if (ocrWorker) {
-    try {
-      await ocrWorker.terminate();
-      console.log("[sidepanel.js] OCR worker terminated on unload.");
-    } catch (error) {
-      console.error("[sidepanel.js] Error terminating OCR worker on unload:", error);
-    }
+  // If we have pending text, inject it after a delay
+  if (pendingOcrText) {
+    setTimeout(() => {
+      injectTextIntoGemini(pendingOcrText);
+      pendingOcrText = null;
+    }, 2000);
   }
 });
 
-// Handle visibility change
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    console.log("[sidepanel.js] Side panel hidden.");
-  } else {
-    console.log("[sidepanel.js] Side panel visible.");
-  }
-});
+console.log("[sidepanel.js] Side panel script initialized.");
