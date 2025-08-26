@@ -16,7 +16,10 @@
     "commands"
   ],
   "host_permissions": [
-    "https://gemini.google.com/*"
+    "https://gemini.google.com/*",
+    "https://chatgpt.com/*",
+    "https://*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "background.js"

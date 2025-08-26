@@ -14,7 +14,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.action.onClicked.addListener(async (tab) => {
   console.log("[background.js] Extension action clicked.");
   try {
-    await chrome.sidePanel.open({ windowId: tab.windowId });
+    await chrome.sidePanel.open({ tabId: tab.id });
     console.log("[background.js] Side panel opened via action click.");
   } catch (error) {
     console.error("[background.js] Failed to open side panel:", error);
@@ -30,7 +30,7 @@ chrome.commands.onCommand.addListener(async (cmd) => {
     if (cmd === "toggle-sidepanel") {
       if (tab?.id) {
         console.log(`[background.js] Toggling side panel for tabId: ${tab.id}`);
-        await chrome.sidePanel.open({ windowId: tab.windowId });
+        await chrome.sidePanel.open({ tabId: tab.id });
         console.log("[background.js] Side panel opened successfully.");
       } else {
         console.warn("[background.js] No active tab found to toggle side panel.");
@@ -47,11 +47,16 @@ chrome.commands.onCommand.addListener(async (cmd) => {
       // Security: Check if we can inject scripts into this tab
       if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('moz-extension://')) {
         console.warn("[background.js] Cannot inject scripts into protected pages:", tab.url);
-        // Notify user through side panel
-        chrome.storage.local.set({ 
-          lastError: "Cannot capture from protected pages (chrome://, extension pages, etc.)" 
-        });
-        await chrome.sidePanel.open({ windowId: tab.windowId });
+        console.log("[background.js] Opening side panel to show error.");
+        try {
+          await chrome.sidePanel.open({ tabId: tab.id });
+          // Store error message for side panel
+          chrome.storage.local.set({ 
+            lastError: "Cannot capture from protected pages (chrome://, extension pages, etc.)" 
+          });
+        } catch (error) {
+          console.error("[background.js] Failed to open side panel for error:", error);
+        }
         return;
       }
 
@@ -97,11 +102,15 @@ chrome.commands.onCommand.addListener(async (cmd) => {
         }
       } catch (injectionError) {
         console.error("[background.js] Failed to inject scripts:", injectionError);
-        // Store error for side panel to display
-        chrome.storage.local.set({ 
-          lastError: `Failed to inject scripts: ${injectionError.message}` 
-        });
-        await chrome.sidePanel.open({ windowId: tab.windowId });
+        try {
+          await chrome.sidePanel.open({ tabId: tab.id });
+          // Store error for side panel to display
+          chrome.storage.local.set({ 
+            lastError: `Failed to inject scripts: ${injectionError.message}` 
+          });
+        } catch (error) {
+          console.error("[background.js] Failed to open side panel for error:", error);
+        }
       }
     }
   } catch (error) {

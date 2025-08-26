@@ -1,24 +1,24 @@
-// sidepanel/sidepanel.js - Real Gemini with Auto OCR Injection
+// sidepanel/sidepanel.js - Gemini Integration with Auto OCR
 
 const captureBtn = document.getElementById("capture-overlay");
 const statusEl = document.getElementById("status");
-const geminiFrame = document.getElementById("gemini-frame");
+const promptInput = document.getElementById("prompt-input");
+const sendBtn = document.getElementById("send-btn");
+const messagesContainer = document.getElementById("messages");
 
-let pendingOcrText = null;
-
-console.log("[sidepanel.js] Real Gemini side panel loaded.");
+console.log("[sidepanel.js] Gemini side panel loaded.");
 
 // Event Listeners
 captureBtn.addEventListener("click", startCapture);
+sendBtn.addEventListener("click", sendToGemini);
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("[sidepanel.js] Message received:", message);
   
   if (message.type === "OCR_TEXT_READY") {
-    console.log("[sidepanel.js] OCR text ready for injection:", message.text);
-    pendingOcrText = message.text;
-    injectTextIntoGemini(message.text);
+    console.log("[sidepanel.js] OCR text ready:", message.text);
+    handleOCRText(message.text);
     sendResponse({ success: true });
   }
   
@@ -34,12 +34,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const result = await chrome.storage.local.get(["pendingOcrText"]);
     if (result.pendingOcrText) {
       console.log("[sidepanel.js] Found pending OCR text on load.");
-      pendingOcrText = result.pendingOcrText;
-      // Wait for Gemini to load, then inject
-      setTimeout(() => {
-        injectTextIntoGemini(result.pendingOcrText);
-      }, 3000);
-      // Clear the pending text
+      handleOCRText(result.pendingOcrText);
       chrome.storage.local.remove(["pendingOcrText"]);
     }
   } catch (error) {
@@ -62,27 +57,75 @@ async function startCapture() {
   }
 }
 
-function injectTextIntoGemini(text) {
+function handleOCRText(text) {
   if (!text || !text.trim()) {
-    console.warn("[sidepanel.js] No text to inject.");
+    console.warn("[sidepanel.js] No text to handle.");
     return;
   }
   
-  console.log("[sidepanel.js] Injecting text into Gemini iframe.");
-  showStatus("Injecting OCR text into Gemini...", 2000);
+  console.log("[sidepanel.js] Handling OCR text:", text);
+  
+  // Fill the input with OCR text
+  promptInput.value = text.trim();
+  
+  // Add message to chat
+  addMessage("OCR Extracted", text.trim(), "user");
+  
+  // Show success status
+  showStatus("OCR text ready! Click 'Send to Gemini' or edit the text first.", 5000);
+  
+  // Focus the input for editing if needed
+  promptInput.focus();
+}
+
+function addMessage(sender, content, type) {
+  const messageDiv = document.createElement("div");
+  messageDiv.className = `message ${type}`;
+  
+  const headerDiv = document.createElement("div");
+  headerDiv.className = "message-header";
+  headerDiv.textContent = sender;
+  
+  const contentDiv = document.createElement("div");
+  contentDiv.textContent = content;
+  
+  messageDiv.appendChild(headerDiv);
+  messageDiv.appendChild(contentDiv);
+  
+  messagesContainer.appendChild(messageDiv);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+async function sendToGemini() {
+  const text = promptInput.value.trim();
+  
+  if (!text) {
+    showStatus("Please enter some text to send to Gemini", 3000);
+    return;
+  }
+  
+  console.log("[sidepanel.js] Opening Gemini with text:", text);
   
   try {
-    // Send message to the iframe content
-    geminiFrame.contentWindow.postMessage({
-      type: "INJECT_OCR_TEXT",
-      text: text.trim()
-    }, "https://gemini.google.com");
+    // Open Gemini in a new tab with the text
+    const geminiUrl = `https://gemini.google.com/app?q=${encodeURIComponent(text)}`;
     
-    console.log("[sidepanel.js] Text injection message sent to Gemini iframe.");
+    await chrome.tabs.create({
+      url: geminiUrl,
+      active: true
+    });
+    
+    addMessage("You", text, "user");
+    addMessage("System", "Opened Gemini in new tab with your text!", "assistant");
+    
+    // Clear the input
+    promptInput.value = "";
+    
+    showStatus("Opened Gemini in new tab!", 3000);
     
   } catch (error) {
-    console.error("[sidepanel.js] Error injecting text:", error);
-    showStatus("Failed to inject text", 3000);
+    console.error("[sidepanel.js] Error opening Gemini:", error);
+    showStatus("Error opening Gemini", 3000);
   }
 }
 
@@ -98,16 +141,11 @@ function showStatus(message, duration = 2000) {
   }
 }
 
-// Handle iframe load
-geminiFrame.addEventListener("load", () => {
-  console.log("[sidepanel.js] Gemini iframe loaded.");
-  
-  // If we have pending text, inject it after a delay
-  if (pendingOcrText) {
-    setTimeout(() => {
-      injectTextIntoGemini(pendingOcrText);
-      pendingOcrText = null;
-    }, 2000);
+// Handle Enter key in textarea
+promptInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.ctrlKey) {
+    e.preventDefault();
+    sendToGemini();
   }
 });
 

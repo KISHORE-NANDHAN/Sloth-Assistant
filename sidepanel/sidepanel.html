@@ -48,12 +48,134 @@
       text-align: center;
       display: none;
     }
+    
+    #gemini-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: #f8f9fa;
+    }
+    
+    #gemini-header {
+      padding: 16px;
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      text-align: center;
+    }
+    
+    #gemini-header h2 {
+      margin: 0 0 8px 0;
+      color: #1a73e8;
+      font-size: 18px;
+    }
+    
+    #gemini-header p {
+      margin: 0;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    #gemini-header a {
+      color: #1a73e8;
+      text-decoration: none;
+    }
+    
+    #chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+    }
+    
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      min-height: 200px;
+    }
+    
+    #input-container {
+      display: flex;
+      gap: 8px;
+    }
+    
+    #prompt-input {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      resize: vertical;
+      min-height: 60px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    
+    #send-btn {
+      padding: 12px 20px;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    
+    #send-btn:hover {
+      background: #1557b0;
+    }
+    
+    #send-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .message {
+      margin-bottom: 16px;
+      padding: 12px;
+      border-radius: 8px;
+    }
+    
+    .message.user {
+      background: #e3f2fd;
+      margin-left: 20px;
+    }
+    
+    .message.assistant {
+      background: #f5f5f5;
+      margin-right: 20px;
+    }
+    
+    .message-header {
+      font-weight: bold;
+      margin-bottom: 4px;
+      font-size: 12px;
+      color: #666;
+    }
   </style>
 </head>
 <body>
   <div id="capture-overlay" title="Alt+O - Capture text from page">📷 OCR Capture</div>
   <div id="status"></div>
-  <iframe id="gemini-frame" src="https://gemini.google.com/app"></iframe>
+  
+  <div id="gemini-container">
+    <div id="gemini-header">
+      <h2>🤖 Gemini AI Assistant</h2>
+      <p>OCR text will appear below. <a href="https://gemini.google.com/app" target="_blank">Open Gemini in new tab</a></p>
+    </div>
+    
+    <div id="chat-container">
+      <div id="messages"></div>
+      <div id="input-container">
+        <textarea id="prompt-input" placeholder="OCR text will appear here automatically..."></textarea>
+        <button id="send-btn">Send to Gemini</button>
+      </div>
+    </div>
+  </div>
   
   <script src="sidepanel.js"></script>
 </body>
