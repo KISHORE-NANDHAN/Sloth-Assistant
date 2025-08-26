@@ -198,17 +198,9 @@ async function captureRegion() {
       console.log("[overlay.js] Received capture data from background. Processing...");
       const croppedDataUrl = await cropImage(response.dataUrl, x, y, w, h);
       
-      // Send the cropped image to background for forwarding to sidepanel
-      const storeResponse = await chrome.runtime.sendMessage({ 
-        type: "REGION_CAPTURE_READY", 
-        dataUrl: croppedDataUrl 
-      });
-      
-      if (storeResponse && storeResponse.ok) {
-        console.log("[overlay.js] Capture data stored successfully.");
-      } else {
-        console.error("[overlay.js] Failed to store capture data:", storeResponse?.error);
-      }
+      // Process OCR directly
+      console.log("[overlay.js] Starting OCR processing...");
+      await processOCR(croppedDataUrl);
       
     } else {
       console.error("[overlay.js] Capture request failed:", response?.error || "Unknown error");
@@ -216,6 +208,69 @@ async function captureRegion() {
     
   } catch (error) {
     console.error("[overlay.js] Failed to capture region:", error);
+  }
+}
+
+async function processOCR(dataUrl) {
+  try {
+    console.log("[overlay.js] Creating Tesseract worker for OCR processing.");
+    
+    // Send status update to background
+    chrome.runtime.sendMessage({
+      type: "CAPTURE_STATUS",
+      status: "Processing OCR...",
+      duration: 0
+    });
+    
+    // Create Tesseract worker
+    const worker = await Tesseract.createWorker({
+      logger: (m) => {
+        console.log(`[Tesseract] ${m.status}: ${(m.progress * 100).toFixed(1)}%`);
+        if (m.status === 'recognizing text') {
+          chrome.runtime.sendMessage({
+            type: "CAPTURE_STATUS",
+            status: `OCR Progress: ${(m.progress * 100).toFixed(1)}%`,
+            duration: 0
+          });
+        }
+      }
+    });
+    
+    await worker.loadLanguage('eng');
+    await worker.initialize('eng');
+    
+    const { data: { text, confidence } } = await worker.recognize(dataUrl);
+    await worker.terminate();
+    
+    console.log(`[overlay.js] OCR completed. Confidence: ${confidence}%`);
+    
+    if (text && text.trim()) {
+      // Send OCR text to background for injection
+      chrome.runtime.sendMessage({
+        type: "OCR_TEXT_READY",
+        text: text.trim()
+      });
+      
+      chrome.runtime.sendMessage({
+        type: "CAPTURE_STATUS",
+        status: `OCR completed! Injecting text...`,
+        duration: 3000
+      });
+    } else {
+      chrome.runtime.sendMessage({
+        type: "CAPTURE_STATUS",
+        status: "No text found in selected region",
+        duration: 3000
+      });
+    }
+    
+  } catch (error) {
+    console.error("[overlay.js] OCR processing failed:", error);
+    chrome.runtime.sendMessage({
+      type: "CAPTURE_STATUS",
+      status: "OCR processing failed",
+      duration: 3000
+    });
   }
 }
 
